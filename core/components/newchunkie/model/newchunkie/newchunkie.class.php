@@ -20,7 +20,7 @@
  *
  * @package chunkie
  * @subpackage classfile
- * @version 1.0
+ * @version 1.0.1
  *
  * newChunkie Class.
  *
@@ -120,9 +120,11 @@ class newChunkie {
 		$this->depth = 0;
 		$this->maxdepth = (integer) $this->modx->getOption('maxdepth', $config, 4);
 		if ($this->modx->getOption('useCorePath', $config, FALSE)) {
-			$this->basepath = MODX_CORE_PATH . $this->modx->getOption('basepath', $config, ''); // Basepath @FILE is prefixed with.
+			// Basepath @FILE is prefixed with
+			$this->basepath = MODX_CORE_PATH . $this->modx->getOption('basepath', $config, '');
 		} else {
-			$this->basepath = MODX_BASE_PATH . $this->modx->getOption('basepath', $config, ''); // Basepath @FILE is prefixed with.
+			// Basepath @FILE is prefixed with
+			$this->basepath = MODX_BASE_PATH . $this->modx->getOption('basepath', $config, '');
 		}
 		$this->tpl = $this->getTemplateChunk($config['tpl']);
 		$this->tplWrapper = $this->getTemplateChunk($config['tplWrapper']);
@@ -170,7 +172,7 @@ class newChunkie {
 	 * @param boolean $wrapper The new template string for rendering.
 	 */
 	public function setTpl($tpl, $wrapper = FALSE) {
-		// mask uncached elements if parseLazy is set
+		// Mask uncached elements if parseLazy is set
 		if ($this->parseLazy) {
 			$tpl = str_replace('[[!', '[[¡', $tpl);
 		}
@@ -251,7 +253,7 @@ class newChunkie {
 	 *
 	 * @access public
 	 * @param string $queue The queue name.
-	 * @return string The placeholders.
+	 * @return array The placeholders.
 	 */
 	public function getPlaceholders($queue = '') {
 		$queue = !empty($queue) ? $queue : $this->queue;
@@ -279,7 +281,19 @@ class newChunkie {
 	 */
 	public function clearPlaceholders($queue = '') {
 		$queue = !empty($queue) ? $queue : $this->queue;
-		$this->placeholders[$queue] = array();
+		unset($this->placeholders[$queue]);
+	}
+
+	/**
+	 * Get the templates array.
+	 *
+	 * @access public
+	 * @param string $queue The queue name.
+	 * @return array The placeholders.
+	 */
+	public function getTemplates($queue = '') {
+		$queue = !empty($queue) ? $queue : $this->queue;
+		return $this->templates[$queue];
 	}
 
 	/**
@@ -290,7 +304,7 @@ class newChunkie {
 	 */
 	public function clearTemplates($queue = '') {
 		$queue = !empty($queue) ? $queue : $this->queue;
-		$this->templates[$queue] = new stdClass();
+		unset($this->templates[$queue]);
 	}
 
 	/**
@@ -306,28 +320,46 @@ class newChunkie {
 	public function prepareTemplate($key, array $placeholders = array(), $queue = '') {
 		$queue = !empty($queue) ? $queue : $this->queue;
 		$keypath = explode('.', $key);
-		$lastkey = array_pop($keypath);
 
-		// fill keypath based templates array
+		// Fill keypath based templates array
+		if (!isset($this->templates[$queue])) {
+			$this->templates[$queue] = new stdClass();
+			$this->templates[$queue]->templates = array();
+			$this->templates[$queue]->wrapper = (!empty($this->tplWrapper)) ? $this->tplWrapper : '[[+wrapper]]';
+		}
 		$current = &$this->templates[$queue];
+
+		// Prepare default templates
+		$currentkeypath = '';
 		foreach ($keypath as $currentkey) {
-			if (!$current) {
-				$current = new stdClass();
-				$current->templates = array();
-				$current->wrapper = (!empty($this->tplWrapper)) ? $this->tplWrapper : '[[+wrapper]]';
+			$currentkeypath .= $currentkey . '.';
+			if (!isset($current->templates[$currentkey])) {
+				$current->templates[$currentkey] = new stdClass();
+				$current->templates[$currentkey]->templates = array();
+				$current->templates[$currentkey]->wrapper = (!empty($this->tplWrapper)) ? $this->tplWrapper : '[[+wrapper]]';
+				$current->templates[$currentkey]->template = '[[+' . trim($currentkeypath, '.') . ']]';
 			}
 			$current = &$current->templates[$currentkey];
 		}
 		if (!empty($this->tpl)) {
-			$current->templates[$lastkey] = $this->tpl;
+			// Set curent template
+			$current->template = $this->tpl;
 			// Replace placeholders array (only full placeholder tags are replaced)
-			foreach ($placeholders as $k => $v) {
-				$current->templates[$lastkey] = str_replace('[[+' . $k . ']]', $v, $current->templates[$lastkey]);
+			if (empty($placeholders)) {
+				$placeholders = $this->getPlaceholders($queue);
+				foreach ($placeholders as $k => $v) {
+					$k = str_replace($key . '.', '', $k);
+					$current->template = str_replace('[[+' . $k . ']]', $v, $current->template);
+				}
+			} else {
+				foreach ($placeholders as $k => $v) {
+					$current->template = str_replace('[[+' . $k . ']]', $v, $current->template);
+				}
 			}
 			// Replace remaining placeholders with key based placeholders
-			$current->templates[$lastkey] = str_replace('[[+', '[[+' . $key . '.', $current->templates[$lastkey]);
+			$current->template = str_replace('[[+', '[[+' . $key . '.', $current->template);
 		} else {
-			$current->templates[$lastkey] = '';
+			$current->template = '';
 		}
 		if (!$current->wrapper) {
 			$current->wrapper = (!empty($this->tplWrapper)) ? $this->tplWrapper : '[[+wrapper]]';
@@ -343,29 +375,36 @@ class newChunkie {
 	 */
 	private function templatesSortRecursive(stdClass &$object) {
 		foreach ($object->templates as &$value) {
-			if (is_object($value))
+			if (is_object($value)) {
 				$this->templatesSortRecursive($value);
+			}
 		}
 		ksort($object->templates);
 	}
 
 	/**
-	 * Flatten the templates object by wrapping templates and concatenating keys with dots.
+	 * Join the templates object by recursive wrapping templates.
 	 *
 	 * @access public
 	 * @param array $array The array to flatten.
 	 * @param string $prefix Top-level prefix. Optional
 	 */
-	private function templatesFlattenRecursive(stdClass $object, $prefix = '') {
-		$result = array();
-		foreach ($object->templates as $key => $value) {
-			if (is_object($value)) {
-				$result[$prefix . $key] = str_replace('[[+wrapper]]', implode("\r\n", $this->templatesFlattenRecursive($value, $prefix . $key . '.')), $object->wrapper);
-			} else {
-				$result[$prefix . $key] = $value;
+	private function templatesJoinRecursive(stdClass $object, $prefix = '', $outputSeparator = "\r\n") {
+		if (!empty($object->templates)) {
+			$flat = array();
+			foreach ($object->templates as $key => $value) {
+				$flat = array_merge($flat, $this->templatesJoinRecursive($value, $prefix . $key . '.', $outputSeparator));
 			}
+			if ($prefix) {
+				$return = array(trim($prefix, '.') => str_replace('[[+wrapper]]', str_replace('[[+' . trim($prefix, '.') . ']]', implode($outputSeparator, $flat), $object->template), $object->wrapper));
+				foreach ($flat as $key => $value) {
+					$return = str_replace('[[+' . $key . ']]', $value, $return);
+				}
+			}
+		} else {
+			$return = array(trim($prefix, '.') => $object->template);
 		}
-		return $result;
+		return $return;
 	}
 
 	/**
@@ -374,23 +413,23 @@ class newChunkie {
 	 * @access public
 	 * @return string Processed template.
 	 */
-	public function process($queue = '', $clear = TRUE) {
+	public function process($queue = '', $outputSeparator = "\r\n", $clear = TRUE) {
 		$queue = !empty($queue) ? $queue : $this->queue;
 		if (!empty($this->templates[$queue])) {
-			// sort the templates array recursive by keys
-			$this->templatesSortRecursive($this->templates[$queue]);
+			// Recursive join templates object
+			$templates = array();
+			foreach ($this->templates[$queue]->templates as $key => $value) {
+				$templates = array_merge($templates, $this->templatesJoinRecursive($value, $key . '.', $outputSeparator));
+			}
+			$template = implode($outputSeparator, $templates);
 
-			// flatten keypath based templates/wrapper object
-			$template = $this->templatesFlattenRecursive($this->templates[$queue]);
-			$template = implode("\r\n", $template);
-
-			// process the whole template
-			$chunk = $this->modx->newObject('modChunk');
+			// Process the whole template
+			$chunk = $this->modx->newObject('modChunk', array('name' => '{tmp}-' . uniqid()));
 			$chunk->setCacheable(false);
 			$output = $chunk->process($this->placeholders[$queue], $template);
 			unset($chunk);
 
-			// unmask uncached elements (will be parsed outside of this)
+			// Unmask uncached elements (will be parsed outside of this)
 			if ($this->parseLazy) {
 				$output = str_replace(array('[[¡'), array('[[!'), $output);
 			}
