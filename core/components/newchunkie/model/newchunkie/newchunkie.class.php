@@ -20,7 +20,7 @@
  *
  * @package chunkie
  * @subpackage classfile
- * @version 1.0.1
+ * @version 1.0.2
  *
  * newChunkie Class.
  *
@@ -74,18 +74,12 @@ class newChunkie {
 	private $templates;
 
 	/**
-	 * The basepath @FILE is prefixed with.
-	 * @var string $basepath
+	 * Global options.
+	 *
+	 * @var array $options
 	 * @access private
 	 */
-	private $basepath;
-
-	/**
-	 * Uncached MODX tags are not parsed inside of newChunkie.
-	 * @var string $parseLazy
-	 * @access private
-	 */
-	private $parseLazy;
+	private $options;
 
 	/**
 	 * A collection of all placeholders.
@@ -102,11 +96,12 @@ class newChunkie {
 	private $depth;
 
 	/**
-	 * The maximum depth of the placeholder keypath.
-	 * @var int $maxdepth
+	 * Profile informations for all rendering queues.
+	 *
+	 * @var array $profile
 	 * @access private
 	 */
-	private $maxdepth;
+	private $profile;
 
 	/**
 	 * newChunkie constructor
@@ -118,30 +113,39 @@ class newChunkie {
 		$this->modx = & $modx;
 
 		$this->depth = 0;
-		$this->maxdepth = (integer) $this->modx->getOption('maxdepth', $config, 4);
 		if ($this->modx->getOption('useCorePath', $config, FALSE)) {
 			// Basepath @FILE is prefixed with
-			$this->basepath = MODX_CORE_PATH . $this->modx->getOption('basepath', $config, '');
+			$this->options['basepath'] = MODX_CORE_PATH . $this->modx->getOption('basepath', $config, '');
 		} else {
 			// Basepath @FILE is prefixed with
-			$this->basepath = MODX_BASE_PATH . $this->modx->getOption('basepath', $config, '');
+			$this->options['basepath'] = MODX_BASE_PATH . $this->modx->getOption('basepath', $config, '');
 		}
+		$this->options['maxdepth'] = (integer) $this->modx->getOption('maxdepth', $config, 4);
+		$this->options['parseLazy'] = $this->modx->getOption('parseLazy', $config, FALSE);
+		$this->options['profile'] = $this->modx->getOption('profile', $config, FALSE);
 		$this->tpl = $this->getTemplateChunk($config['tpl']);
 		$this->tplWrapper = $this->getTemplateChunk($config['tplWrapper']);
-		$this->parseLazy = $this->modx->getOption('parseLazy', $config, FALSE);
 		$this->queue = $this->modx->getOption('queue', $config, 'default');
 		$this->placeholders = array();
 		$this->templates = array();
+		$this->profile = array();
 	}
 
 	/**
-	 * Set the basepath @FILE is prefixed with.
+	 * Set an option.
 	 *
 	 * @access public
-	 * @param string $basepath The basepath @FILE is prefixed with.
+	 * @param string $key The option key.
+	 * @param string $value The  option value.
+	 *
+	 * following option keys are valid:
+	 * - basepath: The basepath @FILE is prefixed with.
+	 * - maxdepth: The maximum depth of the placeholder keypath.
+	 * - parseLazy: Uncached MODX tags are not parsed inside of newChunkie.
+	 * - profile: profile preparing/rendering times.
 	 */
-	public function setBasepath($basepath) {
-		$this->basepath = $basepath;
+	public function setOption($key, $value) {
+		$this->options[$key] = $value;
 	}
 
 	/**
@@ -169,11 +173,11 @@ class newChunkie {
 	 *
 	 * @access public
 	 * @param string $tpl The new template string for rendering.
-	 * @param boolean $wrapper The new template string for rendering.
+	 * @param boolean $wrapper Set wrapper template if true.
 	 */
 	public function setTpl($tpl, $wrapper = FALSE) {
 		// Mask uncached elements if parseLazy is set
-		if ($this->parseLazy) {
+		if ($this->options['parseLazy']) {
 			$tpl = str_replace('[[!', '[[¡', $tpl);
 		}
 		if (!$wrapper) {
@@ -211,7 +215,7 @@ class newChunkie {
 	 * @param string $queue The queue name
 	 */
 	public function setPlaceholders($value = '', $key = '', $keypath = '', $queue = '') {
-		if ($this->depth > $this->maxdepth) {
+		if ($this->depth > $this->options['maxdepth']) {
 			return;
 		}
 		$queue = ($queue != '') ? $queue : $this->queue;
@@ -319,6 +323,10 @@ class newChunkie {
 	 */
 	public function prepareTemplate($key, array $placeholders = array(), $queue = '') {
 		$queue = !empty($queue) ? $queue : $this->queue;
+		if ($this->options['profile']) {
+			$this->profile[$queue]['prepare'] = isset($this->profile[$queue]['prepare']) ? $this->profile[$queue]['prepare'] : 0;
+			$start = microtime(TRUE);
+		}
 		$keypath = explode('.', $key);
 
 		// Fill keypath based templates array
@@ -365,6 +373,10 @@ class newChunkie {
 			$current->wrapper = (!empty($this->tplWrapper)) ? $this->tplWrapper : '[[+wrapper]]';
 		}
 		unset($current);
+		if ($this->options['profile']) {
+			$end = microtime(TRUE);
+			$this->profile[$queue]['prepare'] += $end - $start;
+		}
 	}
 
 	/**
@@ -387,7 +399,8 @@ class newChunkie {
 	 *
 	 * @access public
 	 * @param array $array The array to flatten.
-	 * @param string $prefix Top-level prefix. Optional
+	 * @param string $prefix Top-level prefix.
+	 * @param string $outputSeparator Separator between two joined elements.
 	 */
 	private function templatesJoinRecursive(stdClass $object, $prefix = '', $outputSeparator = "\r\n") {
 		if (!empty($object->templates)) {
@@ -408,13 +421,39 @@ class newChunkie {
 	}
 
 	/**
+	 * Get profiling value.
+	 *
+	 * @access public
+	 * @param string $type The profiling type.
+	 * @param string $queue The queue name.
+	 * @return array The profiling value.
+	 *
+	 * following profiling types are valid:
+	 * - prepare: Time for preparing the templates object.
+	 * - render: Time for rendering the templates object.
+	 */
+	public function getProfile($type, $queue = '') {
+		$queue = !empty($queue) ? $queue : $this->queue;
+		$output = $this->profile[$queue][$type];
+		$this->profile[$queue][$type] = 0;
+		return $output;
+	}
+
+	/**
 	 * Process the current queue with the queue placeholders.
 	 *
 	 * @access public
+	 * @param string $queue The queue name.
+	 * @param string $outputSeparator Separator between two joined elements.
+	 * @param boolean $clear Clear queue after process.
 	 * @return string Processed template.
 	 */
 	public function process($queue = '', $outputSeparator = "\r\n", $clear = TRUE) {
 		$queue = !empty($queue) ? $queue : $this->queue;
+		if ($this->options['profile']) {
+			$this->profile[$queue]['render'] = isset($this->profile[$queue]['render']) ? $this->profile[$queue]['render'] : 0;
+			$start = microtime(TRUE);
+		}
 		if (!empty($this->templates[$queue])) {
 			// Recursive join templates object
 			$templates = array();
@@ -430,7 +469,7 @@ class newChunkie {
 			unset($chunk);
 
 			// Unmask uncached elements (will be parsed outside of this)
-			if ($this->parseLazy) {
+			if ($this->options['parseLazy']) {
 				$output = str_replace(array('[[¡'), array('[[!'), $output);
 			}
 		} else {
@@ -439,6 +478,10 @@ class newChunkie {
 		if ($clear) {
 			$this->clearPlaceholders($queue);
 			$this->clearTemplates($queue);
+		}
+		if ($this->options['profile']) {
+			$end = microtime(TRUE);
+			$this->profile[$queue]['render'] += $end - $start;
 		}
 		return $output;
 	}
@@ -462,8 +505,8 @@ class newChunkie {
 					$this->modx->chunkieCache['@FILE'] = array();
 				}
 				if (!array_key_exists($filename, $this->modx->chunkieCache['@FILE'])) {
-					if (file_exists($this->basepath . $filename)) {
-						$template = file_get_contents($this->basepath . $filename);
+					if (file_exists($this->options['basepath'] . $filename)) {
+						$template = file_get_contents($this->options['basepath'] . $filename);
 					}
 					$this->modx->chunkieCache['@FILE'][$filename] = $template;
 				} else {

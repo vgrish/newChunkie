@@ -6,7 +6,14 @@ Fast and reliable parsing addition for MODX Revolution. Maybe later available on
 Features
 -----------
 
-MODX internal getChunk has a speed problem if you call it multiple in a snippet. This could be even worse if you iterate through nested objects. During my small tests the speed improvement with newChunkie was about the factor 3.5 with not nested getChunk calls. With one level of iteration the improvement was about the factor 4.
+MODX internal getChunk has a speed problem if you call it multiple in a snippet. This could be even worse if you iterate through nested objects and call getChunk every iteration. 
+
+My approach to solve this, is to generate a parsing queue with a keypath during iteration and fill this queue with keypath based templates and placeholders. Replaceable placeholders are inserted directly and the ones with modifiers were replaced later during **one** finishing $chunk->process call.
+
+During my small tests the speed improvement with newChunkie was about the factor 3.5 with not nested getChunk calls. With one nested level of iteration the improvement was about the factor 4. Maybe the impact is bigger with larger and/or deeper nested objects. If you want to check the preparing/rendering times, activate the `profile` option in the class and get these times for each queue stored newChunkie->profile.
+
+The class has also the option not to process uncached MODX tags (option `parseLazy`). So the processed result could be cached from the calling snippet/plugin and the uncached MODX tags were processed later by the MODX parser.
+
 
 Requirements
 -----------
