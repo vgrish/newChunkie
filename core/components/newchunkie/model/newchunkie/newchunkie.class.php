@@ -415,7 +415,7 @@ class newChunkie {
 				}
 			}
 		} else {
-			$return = array(trim($prefix, '.') => $object->template);
+			$return = array(trim($prefix, '.') => str_replace('[[+wrapper]]', $object->template, $object->wrapper));
 		}
 		return $return;
 	}
