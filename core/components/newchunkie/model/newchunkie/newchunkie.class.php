@@ -110,7 +110,7 @@ class newChunkie {
 	 * @param array $config An array of configuration options. Optional.
 	 */
 	function __construct(modX &$modx, array $config = array()) {
-		$this->modx = & $modx;
+		$this->modx = &$modx;
 
 		$this->depth = 0;
 		if ($this->modx->getOption('useCorePath', $config, FALSE)) {
@@ -219,7 +219,7 @@ class newChunkie {
 			return;
 		}
 		$queue = ($queue != '') ? $queue : $this->queue;
-		$keypath = ($keypath !== '') ? strval($keypath) . "." . $key : $key;
+		$keypath = ($keypath !== '') ? strval($keypath) . '.' . $key : $key;
 		if (is_array($value)) {
 			$this->depth++;
 			foreach ($value as $subkey => $subval) {
@@ -365,7 +365,7 @@ class newChunkie {
 				}
 			}
 			// Replace remaining placeholders with key based placeholders
-			$current->template = str_replace('[[+', '[[+' . $key . '.', $current->template);
+			$current->template = str_replace('[[+', '[[+' . ltrim($key . '.', '.'), $current->template);
 		} else {
 			$current->template = '';
 		}
@@ -499,7 +499,7 @@ class newChunkie {
 	 */
 	public function getTemplateChunk($tpl) {
 		switch (TRUE) {
-			case (substr($tpl, 0, 5) == "@FILE"):
+			case (substr($tpl, 0, 5) == '@FILE'):
 				$filename = trim(substr($tpl, 5), ' :');
 				if (!isset($this->modx->chunkieCache['@FILE'])) {
 					$this->modx->chunkieCache['@FILE'] = array();
@@ -513,11 +513,11 @@ class newChunkie {
 					$template = $this->modx->chunkieCache['@FILE'][$filename];
 				}
 				break;
-			case (substr($tpl, 0, 7) == "@INLINE"):
+			case (substr($tpl, 0, 7) == '@INLINE'):
 				$template = trim(substr($tpl, 7), ' :');
 				break;
 			default:
-				if (substr($tpl, 0, 6) == "@CHUNK") {
+				if (substr($tpl, 0, 6) == '@CHUNK') {
 					$chunkname = trim(substr($tpl, 6), ' :');
 				} else {
 					$chunkname = $tpl;
